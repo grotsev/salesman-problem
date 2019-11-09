@@ -1,0 +1,14 @@
+[package]
+name = "annealing"
+version = "0.1.0"
+authors = ["den"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rand = "0.7.2"
+rand_chacha = "0.2.1"
+itertools = "0.8.1"
+plotters = "0.2.11"
+ndarray = "0.13.0"
