@@ -11,85 +11,83 @@ use itertools::Itertools;
 use plotters::prelude::*;
 use std::time::{Duration, Instant};
 use ndarray::{Array, Array2};
+use plotters::style::RGBAColor;
 
 type Point = (i32, i32);
-type Distance = Array2<u32>;
+type P = u16;
 
+const N: P = 1000;
 
-#[derive(Debug, Clone)]
-struct Route {
-    visits: Vec<u16>,
-    length: u32,
-}
+fn annealing(solution: &mut Vec<P>, costMatrix: Array2<u32>) -> u32 {
+    let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(10);
+    // local u16 pointers
 
-impl Route {
-    fn new(visits: Vec<u16>, d: &Array2<u32>) -> Self {
-        Route {
-            length: visits.iter().tuple_windows::<(&u16, &u16)>()
-                .map(|(a, b)| d[(*a as usize, *b as usize)]).sum::<u32>() + d[(visits.len() - 1, 0)],
-            visits,
+    let cost = |a: P, b: P| {costMatrix[(a as usize, b as usize)]};
+    let mut solutionCost = solution.iter()
+        .tuple_windows::<(&P, &P)>()
+        .map(|(a, b)| cost(*a, *b)).sum::<u32>();
+
+    for i in 0..2000000 {
+        let a = rng.gen_range(1, N);
+        let b = rng.gen_range(1, N);
+        let (a, b) = match a.cmp(&b) {
+            Ordering::Less => { (a, b) }
+            Ordering::Greater => { (b, a) }
+            Ordering::Equal => { continue; }
+        };
+
+        let estimate = |a: P, b: P| {
+            let az = solution[a as usize];
+            let am = solution[a as usize - 1];
+            let bz = solution[b as usize];
+            let bp = solution[b as usize + 1];
+            (cost(am, az) + cost(bz, bp),
+             cost(am, bz) + cost(az, bp))
+        };
+
+        let e = estimate(a, b);
+
+        if e.1 <= e.0 + 1 {
+            solution[a as usize..=b as usize].reverse();
+            solutionCost -= e.0;
+            solutionCost += e.1;
         }
     }
 
-    fn opt2(&mut self, d: &Array2<u32>, from: u16, to: u16) {
-        let (f, t) = match from.cmp(&to) {
-            Ordering::Less => { (from, to) }
-            Ordering::Greater => { (to, from) }
-            Ordering::Equal => { return; }
-        };
-        if t - f + 2 >= self.visits.len() as u16 { return; }
-        self.visits[f as usize..=t as usize].reverse();
-        let bf = self.visits[if f > 0 { f - 1 } else { self.visits.len() as u16 - 1 } as usize] as usize;
-        let at = self.visits[if t as usize + 1 < self.visits.len() { t + 1 } else { 0 } as usize] as usize;
-        let xf = self.visits[f as usize] as usize;
-        let xt = self.visits[t as usize] as usize;
-        self.length = self.length - d[(bf, xt)] - d[(xf, at)] + d[(bf, xf)] + d[(xt, at)];
-    }
-
-    fn draw(&self, points: Vec<Point>) {
-        let root = BitMapBackend::new("plot.png", (600, 600))
-            .into_drawing_area()
-            .apply_coord_spec(RangedCoord::<RangedCoordi32, RangedCoordi32>::new(-100..100, -100..100, (0..600, 0..600)));
-        root.fill(&WHITE);
-        root.draw(
-            &Path::new(self.visits.iter()
-                           .map(|i| points[*i as usize]).collect::<Vec<Point>>(), &BLACK)
-        );
-    }
+    solutionCost
 }
+
+fn draw(visits: &Vec<u16>, points: Vec<Point>) {
+    let root = BitMapBackend::new("plot.png", (600, 600))
+        .into_drawing_area()
+        .apply_coord_spec(RangedCoord::<RangedCoordi32, RangedCoordi32>::new(-100..100, -100..100, (0..600, 0..600)));
+    root.fill(&WHITE);
+    root.draw(
+        &Path::new(visits.iter()
+                       .map(|i| points[*i as usize]).collect::<Vec<Point>>(), &BLACK)
+    );
+}
+
 
 fn main() {
     let start = Instant::now();
     let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(10);
 
-    let n = 1000_u16;
-    let points: Vec<Point> = (0..n).map(|_| (rng.gen_range(-100, 100), rng.gen_range(-100, 100)))
+    let points: Vec<Point> = (0..N).map(|_| (rng.gen_range(-100, 100), rng.gen_range(-100, 100)))
         .collect();
 
     let ds: Array2<u32> = Array2::from_shape_fn(
-        (n as usize, n as usize),
+        (N as usize, N as usize),
         |(a, b)| ((points[a as usize].0 - points[b as usize].0) as f64)
             .hypot((points[a as usize].1 - points[b as usize].1) as f64)
             .ceil() as u32);
 
-    let mut best = Route::new((0..n).collect(), &ds);
-    let mut current = best.clone();
+    let mut solution: Vec<P> = (0..N).collect();
+    solution.push(0);
 
-    for i in 0..2000000 {
-        let from = rng.gen_range(0, n);
-        let to = rng.gen_range(0, n);
-        if from == to { continue; }
+    let solutionCost = annealing(&mut solution, ds);
 
-        current.opt2(&ds, from, to);
-
-        if current.length <= best.length + 1 {
-            best = current.clone();
-        } else {
-            current = best.clone();
-        }
-    }
-
-    println!("{:?} {:?}", start.elapsed(), best.length);
-    best.draw(points);
+    println!("{:?} {:?}", start.elapsed(), solutionCost);
+    draw(&solution, points);
 }
 
