@@ -4,7 +4,6 @@ extern crate plotters;
 extern crate ndarray;
 
 use rand::prelude::*;
-use std::cmp::Ordering;
 use plotters::prelude::*;
 use std::time::Instant;
 use ndarray::Array2;
@@ -20,13 +19,8 @@ fn annealing<R>(rng: &mut R, solution: &mut Vec<P>, cost_matrix: Array2<u32>) ->
         .map(|i| cost(solution[i - 1], solution[i])).sum::<u32>();
 
     for _ in 0..2000000 {
-        let a = rng.gen_range(1, N);
-        let b = rng.gen_range(1, N);
-        let (a, b) = match a.cmp(&b) {
-            Ordering::Less => { (a, b) }
-            Ordering::Greater => { (b, a) }
-            Ordering::Equal => { continue; }
-        };
+        let a = rng.gen_range(1, N-1);
+        let b = rng.gen_range(a+1, N);
 
         let estimate = |a: P, b: P| {
             let az = solution[a as usize];
