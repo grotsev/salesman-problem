@@ -1,13 +1,11 @@
 extern crate rand;
 extern crate rand_chacha;
-extern crate itertools;
 extern crate plotters;
 extern crate ndarray;
 
 use rand::prelude::*;
 use rand::distributions::Standard;
 use std::cmp::Ordering;
-use itertools::Itertools;
 use plotters::prelude::*;
 use std::time::{Duration, Instant};
 use ndarray::{Array, Array2};
@@ -20,12 +18,10 @@ const N: P = 1000;
 
 fn annealing(solution: &mut Vec<P>, costMatrix: Array2<u32>) -> u32 {
     let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(10);
-    // local u16 pointers
 
-    let cost = |a: P, b: P| {costMatrix[(a as usize, b as usize)]};
-    let mut solutionCost = solution.iter()
-        .tuple_windows::<(&P, &P)>()
-        .map(|(a, b)| cost(*a, *b)).sum::<u32>();
+    let cost = |a: P, b: P| { costMatrix[(a as usize, b as usize)] };
+    let mut solutionCost = (1..solution.len())
+        .map(|i| cost(solution[i - 1], solution[i])).sum::<u32>();
 
     for i in 0..2000000 {
         let a = rng.gen_range(1, N);
