@@ -1,20 +1,17 @@
 extern crate rand;
 extern crate rand_chacha;
-extern crate plotters;
+extern crate image;
+extern crate imageproc;
 
 use rand::prelude::*;
-use plotters::prelude::*;
 use std::time::Instant;
 use std::collections::BTreeSet;
+use image::{Rgb, RgbImage};
+use imageproc::drawing::{draw_line_segment_mut, draw_filled_rect_mut};
+use imageproc::rect::Rect;
 
 type Coord = (i32, i32);
 type P = u16;
-
-
-/*fn near(cost: &Array2<u32>) -> Array2<P> {
-    let res = Array2::from_shape_fn((N, N), |(a, pos)| pos);
-    res.into_i
-}*/
 
 fn main() {
     let start = Instant::now();
@@ -22,14 +19,24 @@ fn main() {
 
     let size: P = 1000;
     let index = |a: P, b: P| a as usize * size as usize + b as usize;
-    let points: Vec<Coord> = (0..size).map(|_| (rng.gen_range(-100, 100), rng.gen_range(-100, 100))).collect();
+    let points: Vec<Coord> = (0..size).map(|_| (rng.gen_range(0, 1000), rng.gen_range(0, 1000))).collect();
 
     let draw = |visits: &Vec<P>| {
-        let root = BitMapBackend::new("plot.png", (600, 600)).into_drawing_area()
-            .apply_coord_spec(RangedCoord::<RangedCoordi32, RangedCoordi32>::new(-100..100, -100..100, (0..600, 0..600)));
-        root.fill(&WHITE).unwrap();
-        root.draw(&Path::new(visits.iter().map(|i| points[*i as usize]).collect::<Vec<Coord>>(), &BLACK)
-        ).unwrap();
+        let mut image: RgbImage = RgbImage::new(1000, 1000);
+        let black = Rgb([0u8, 0u8, 0u8]);
+        let white = Rgb([255u8, 255u8, 255u8]);
+        draw_filled_rect_mut(&mut image, Rect::at(0, 0).of_size(1000, 1000), white);
+        let coord = |i| {
+            let p = points[visits[i] as usize];
+            (p.0 as f32, p.1 as f32)
+        } ;
+        let mut prev = coord(0);
+        for i in 1..visits.len() {
+            let curr = coord(i);
+            draw_line_segment_mut(&mut image, prev, curr, black);
+            prev = curr;
+        }
+        image.save("plot.png").unwrap();
     };
 
     let cost_matrix: Vec<u32> = {
@@ -45,6 +52,16 @@ fn main() {
     };
 
     let cost = |a: P, b: P| cost_matrix[index(a, b)];
+
+    let near_matrix: Vec<P> = {
+        let mut r = Vec::with_capacity(size as usize * (size as usize - 1));
+        for a in 0..size {
+            r.extend(0..a);
+            r.extend(a + 1..size);
+            r[a as usize * (size as usize - 1)..(a as usize + 1) * (size as usize - 1)].sort();
+        }
+        r
+    };
 
     let mut solution = { // greedy
         let mut r: Vec<P> = Vec::with_capacity(size as usize);

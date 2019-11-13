@@ -9,4 +9,5 @@ edition = "2018"
 [dependencies]
 rand = "0.7.2"
 rand_chacha = "0.2.1"
-plotters = "0.2.11"
+image = "0.22.3"
+imageproc = "0.19.2"
