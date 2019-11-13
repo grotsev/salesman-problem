@@ -7,8 +7,9 @@ use rand::prelude::*;
 use std::time::Instant;
 use std::collections::BTreeSet;
 use image::{Rgb, RgbImage};
-use imageproc::drawing::{draw_line_segment_mut, draw_filled_rect_mut};
+use imageproc::drawing::{draw_antialiased_line_segment_mut, draw_filled_rect_mut};
 use imageproc::rect::Rect;
+use imageproc::pixelops::interpolate;
 
 type Coord = (i32, i32);
 type P = u16;
@@ -20,24 +21,6 @@ fn main() {
     let size: P = 1000;
     let index = |a: P, b: P| a as usize * size as usize + b as usize;
     let points: Vec<Coord> = (0..size).map(|_| (rng.gen_range(0, 1000), rng.gen_range(0, 1000))).collect();
-
-    let draw = |visits: &Vec<P>| {
-        let mut image: RgbImage = RgbImage::new(1000, 1000);
-        let black = Rgb([0u8, 0u8, 0u8]);
-        let white = Rgb([255u8, 255u8, 255u8]);
-        draw_filled_rect_mut(&mut image, Rect::at(0, 0).of_size(1000, 1000), white);
-        let coord = |i| {
-            let p = points[visits[i] as usize];
-            (p.0 as f32, p.1 as f32)
-        } ;
-        let mut prev = coord(0);
-        for i in 1..visits.len() {
-            let curr = coord(i);
-            draw_line_segment_mut(&mut image, prev, curr, black);
-            prev = curr;
-        }
-        image.save("plot.png").unwrap();
-    };
 
     let cost_matrix: Vec<u32> = {
         let mut r = Vec::with_capacity(size as usize * size as usize);
@@ -58,9 +41,40 @@ fn main() {
         for a in 0..size {
             r.extend(0..a);
             r.extend(a + 1..size);
-            r[a as usize * (size as usize - 1)..(a as usize + 1) * (size as usize - 1)].sort();
+            r[a as usize * (size as usize - 1)..(a as usize + 1) * (size as usize - 1)]
+                .sort_by_key(|&b| cost(a, b));
         }
         r
+    };
+
+    let near = |a: P| &near_matrix[a as usize * (size as usize - 1)..(a as usize + 1) * (size as usize - 1)];
+
+    let draw = |visits: &Vec<P>| {
+        let mut image: RgbImage = RgbImage::new(1000, 1000);
+        let black = Rgb([0u8, 0u8, 0u8]);
+        let white = Rgb([255u8, 255u8, 255u8]);
+        let red = Rgb([255u8, 0u8, 0u8]);
+
+        draw_filled_rect_mut(&mut image, Rect::at(0, 0).of_size(1000, 1000), white);
+
+        fn m((x, y): (i32, i32)) -> (i32, i32) { (x + 1, y + 2) }
+        for i in 0..size {
+            let a = m(points[i as usize]);
+            let b = m(points[near(i)[0] as usize]);
+            draw_antialiased_line_segment_mut(&mut image, a, b, red, interpolate);
+        }
+
+        let coord = |i| {
+            points[visits[i as usize] as usize]
+        };
+        let mut prev = coord(0);
+        for i in 1..size {
+            let curr = coord(i);
+            draw_antialiased_line_segment_mut(&mut image, prev, curr, black, interpolate);
+            prev = curr;
+        }
+
+        image.save("plot.png").unwrap();
     };
 
     let mut solution = { // greedy
