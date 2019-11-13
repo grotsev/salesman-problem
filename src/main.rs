@@ -53,7 +53,7 @@ fn main() {
         let mut image: RgbImage = RgbImage::new(1000, 1000);
         let black = Rgb([0u8, 0u8, 0u8]);
         let white = Rgb([255u8, 255u8, 255u8]);
-        let red = Rgb([255u8, 0u8, 0u8]);
+        let yellow = Rgb([255u8, 255u8, 0u8]);
 
         draw_filled_rect_mut(&mut image, Rect::at(0, 0).of_size(1000, 1000), white);
 
@@ -61,14 +61,14 @@ fn main() {
         for i in 0..size {
             let a = m(points[i as usize]);
             let b = m(points[near(i)[0] as usize]);
-            draw_antialiased_line_segment_mut(&mut image, a, b, red, interpolate);
+            draw_antialiased_line_segment_mut(&mut image, a, b, yellow, interpolate);
         }
 
         let coord = |i| {
             points[visits[i as usize] as usize]
         };
         let mut prev = coord(0);
-        for i in 1..size {
+        for i in 1..=size {
             let curr = coord(i);
             draw_antialiased_line_segment_mut(&mut image, prev, curr, black, interpolate);
             prev = curr;
@@ -77,13 +77,13 @@ fn main() {
         image.save("plot.png").unwrap();
     };
 
-    let mut solution = { // greedy
+    let mut best = { // greedy
         let mut r: Vec<P> = Vec::with_capacity(size as usize);
         let mut prev = 0;
         r.push(prev);
         let mut rest: BTreeSet<P> = (1..size).collect();
         while !rest.is_empty() {
-            prev = *rest.iter().min_by_key(|next| cost(prev, **next)).unwrap();
+            prev = *near(prev).iter().find(|next| rest.contains(next)).unwrap();
             r.push(prev);
             rest.remove(&prev);
         }
@@ -91,29 +91,29 @@ fn main() {
         r
     };
 
-    let mut solution_cost =
-        (1..solution.len()).map(|i| cost(solution[i - 1], solution[i])).sum::<u32>();
+    let mut best_cost =
+        (1..best.len()).map(|i| cost(best[i - 1], best[i])).sum::<u32>();
 
     for _ in 0..2000000 {
         let a = rng.gen_range(1, size - 1);
         let b = rng.gen_range(a + 1, size);
 
         let estimate = |a: P, b: P| {
-            let az = solution[a as usize];
-            let am = solution[a as usize - 1];
-            let bz = solution[b as usize];
-            let bp = solution[b as usize + 1];
+            let az = best[a as usize];
+            let am = best[a as usize - 1];
+            let bz = best[b as usize];
+            let bp = best[b as usize + 1];
             (cost(am, az) + cost(bz, bp),
              cost(am, bz) + cost(az, bp))
         };
         let e = estimate(a, b);
 
         if e.1 <= e.0 {
-            solution[a as usize..=b as usize].reverse();
-            solution_cost = solution_cost - e.0 + e.1;
+            best[a as usize..=b as usize].reverse();
+            best_cost = best_cost - e.0 + e.1;
         }
     }
-    println!("{:?} {:?}", start.elapsed(), solution_cost);
-    draw(&solution);
+    println!("{:?} {:?}", start.elapsed(), best_cost);
+    draw(&best);
 }
 
