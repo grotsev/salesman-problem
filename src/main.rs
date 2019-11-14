@@ -4,7 +4,7 @@ extern crate image;
 extern crate imageproc;
 
 use rand::prelude::*;
-use std::time::{Instant};
+use std::time::Instant;
 use std::collections::BTreeSet;
 use image::{Rgb, RgbImage};
 use imageproc::drawing::{draw_antialiased_line_segment_mut, draw_filled_rect_mut};
@@ -50,7 +50,7 @@ fn main() {
 
     let near = |a: P| &near_matrix[a as usize * (size as usize - 1)..(a as usize + 1) * (size as usize - 1)];
 */
-    let draw = |visits: &Vec<P>, i:u32| {
+    let draw = |visits: &Vec<P>, i: u32| {
         let mut image: RgbImage = RgbImage::new(width, width);
         let black = Rgb([0u8, 0u8, 0u8]);
         let gray = Rgb([200u8, 200u8, 200u8]);
@@ -60,7 +60,7 @@ fn main() {
         draw_filled_rect_mut(&mut image, Rect::at(0, 0).of_size(width, width), white);
 
         for p in &points {
-            draw_filled_rect_mut(&mut image, Rect::at(p.0-1, p.1-1).of_size(3, 3), black);
+            draw_filled_rect_mut(&mut image, Rect::at(p.0 - 1, p.1 - 1).of_size(3, 3), black);
         }
         /*fn m((x, y): (i32, i32)) -> (i32, i32) { (x + 1, y + 2) }
         for i in 0..size {
@@ -98,15 +98,43 @@ fn main() {
                 if p < min_p {
                     min_b = b;
                     min_c = *c;
-                    min_p =p;
+                    min_p = p;
                 }
             }
         }
         best.insert(min_b, min_c);
         rest.remove(&min_c);
         best_cost += min_p;
+
+        let estimate = |best: &Vec<P>, a: P, b: P| {
+            let az = best[a as usize];
+            let am = best[a as usize - 1];
+            let bz = best[b as usize];
+            let bp = best[b as usize + 1];
+            (cost(am, az) + cost(bz, bp),
+             cost(am, bz) + cost(az, bp))
+        };
+
+        (min_b + 2..best.len() - 1)
+            .map(|b| (b, estimate(&best, min_b as P + 1, b as u16)))
+            .filter(|(b, e)| e.0 > e.1)
+            .max_by_key(|(b, e)| e.0 - e.1)
+            .map(|(b, e)| {
+                best[min_b + 1..=b].reverse();
+                best_cost = best_cost - e.0 + e.1;
+            });
+
+        (1..min_b - 1)
+            .map(|a| (a, estimate(&best, a as u16, min_b as P - 1)))
+            .filter(|(a, e)| e.0 > e.1)
+            .max_by_key(|(a, e)| e.0 - e.1)
+            .map(|(a, e)| {
+                best[a..=min_b - 1].reverse();
+                best_cost = best_cost - e.0 + e.1;
+            });
+
         draw(&best, i);
-        i+=1;
+        i += 1;
     }
 
     /*let mut best = { // greedy
