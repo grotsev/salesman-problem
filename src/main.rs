@@ -91,22 +91,20 @@ fn main() {
     let mut rest: BTreeSet<P> = (1..size).collect();
     let mut i = 0;
     while !&rest.is_empty() {
-        let mut min_pot = std::u32::MAX;
-        let mut min_b = std::usize::MAX;
-        let mut min_c = std::u16::MAX;
+        let (mut min_b, mut min_c, mut min_p) = (std::usize::MAX, std::u16::MAX, std::u32::MAX);
         for b in 1..best.len() {
             for c in &rest {
                 let p = pot(best[b - 1], best[b], *c);
-                if p < min_pot {
-                    min_pot = p;
+                if p < min_p {
                     min_b = b;
                     min_c = *c;
+                    min_p =p;
                 }
             }
         }
         best.insert(min_b, min_c);
         rest.remove(&min_c);
-        best_cost += min_pot;
+        best_cost += min_p;
         draw(&best, i);
         i+=1;
     }
