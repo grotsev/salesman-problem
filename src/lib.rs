@@ -1,66 +1,67 @@
-/*extern crate ndarray;
+/*use priority_queue::PriorityQueue;
+use std::cmp::Ordering;
+use std::collections::HashSet;
 
-use ndarray::Array2;
+type P = usize;
 
-type VisitId = u16;
-type ChainId = u16;
+type PP = (P, P);
 
-struct Cost(Array2<u32>);
+struct Merge {
+    up: bool,
+    cost: u32,
+    sub: [PP; 2],
+    add: [PP; 2],
+}
 
-impl Fn<> for Cost {
-    fn get(&self, i: (VisitId, VisitId)) -> u32 {
-        self.0[(a as usize, b as usize)]
+impl Ord for Merge {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.up.cmp(&other.up.cmp)
+            .then(other.cost.cmp(&self.cost))
     }
 }
 
-type Route = Vec<VisitId>;
-
-fn estimate_swap(route: &Route, cost: Cost, a: usize, b: usize) -> (u32, u32) {
-    let az = route[a] as usize;
-    let am = route[a - 1] as usize;
-    let ap = route[a + 1] as usize;
-    let bz = route[b] as usize;
-    let bm = route[b - 1] as usize;
-    let bp = route[b + 1] as usize;
-    (cost[(am, az)] + cost[(az, ap)] + cost[(bm, bz)] + cost[(bz, bp)],
-     cost[(am, bz)] + cost[(bz, ap)] + cost[(bm, az)] + cost[(az, bp)])
+fn sort(a: [P; 2]) -> [P; 2] {
+    if a[0] < a[1] { a } else { [a[1], a[0]] }
 }
 
-fn estimate_remove_insert(route: &Route, cost: Cost, a: usize, b: usize) -> (u32, u32) {
-    let az = route[a] as usize;
-    let am = route[a - 1] as usize;
-    let ap = route[a + 1] as usize;
-    let bz = route[b] as usize;
-    let bm = route[b - 1] as usize;
-    (cost[(am, az)] + cost[(az, ap)] + cost[(bm, bz)],
-     cost[(bm, az)] + cost[(az, bz)] + cost[(am, ap)])
+fn solve(size: P, cost: fn(P, P) -> u32) -> Vec<([P; 2], Merge)> {
+    let mut merge: Vec<([P; 2], Merge)> = (0..size).map(|a| [
+        ([a, a], Merge { up: false, cost: 0, sub: [(a, a), (a, a)], add: [(a, a), (a, a)] }),
+    ]).collect();
+
+    let mut actual: HashSet<P> = (0..size).collect();
+    let mut queue: PriorityQueue<[P; 2], Merge> = PriorityQueue::new();
+    for a in 0..size - 1 {
+        for b in a + 1..size {
+            queue.push([a, b], Merge { up: false, cost: 2 * cost(a, b), sub: [(a, a), (b, b)], add: [(a, b), (a, b)] });
+        }
+    };
+    for m in size..2 * size - 1 {
+        let reify = queue.pop().unwrap();
+        merge.push(reify);
+        actual.remove(&reify.0[0]);
+        actual.remove(&reify.0[1]);
+        for other in actual {
+            let trash: ([P; 2], Merge) = reify.0.map(|r| {
+                queue.change_priority_by(&sort([r, other]), |mut p| {
+                    p.up = true;
+                    p
+                });
+                queue.pop().unwrap()
+            }).min_by(|t| t.1.cost);
+            queue.push([other, m], Merge {
+                up: false,
+                cost: 0,
+                sub: [],
+                add: [],
+            });
+        }
+        actual.push(m);
+    };
+    merge
 }
 
-fn estimate_reverse(route: &Route, cost: Cost, a: usize, b: usize) -> (u32, u32) {
-    let az = route[a] as usize;
-    let am = route[a - 1] as usize;
-    let bz = route[b] as usize;
-    let bp = route[b + 1] as usize;
-    (cost[(am, az)] + cost[(bz, bp)],
-     cost[(am, bz)] + cost[(az, bp)])
+fn main() {
+
 }
-
-fn remove_insert(route: &mut Route, a: usize, b: usize) {
-    let t = route[a];
-    if a < b {
-        route.copy_within(a + 1..=b, a);
-    } else {
-        route.copy_within(b..a, b + 1);
-    }
-    route[b] = t;
-}
-
-fn reverse(route: &mut Route, a: usize, b: usize) {
-    route[a..=b].reverse();
-}
-
-// fn swap(&mut self, a: usize, b: usize)
-
-//fn scramble() {}
-//fn pfih() {}
 */
