@@ -30,7 +30,7 @@ fn main() {
     let start = Instant::now();
     let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(10);
 
-    let size: P = 14;
+    let size: P = 100;
     let index = |a: P, b: P| a as usize * size as usize + b as usize;
     let width: u32 = 256;
     let points: Vec<Coord> = (0..size).map(|_| (rng.gen_range(0, width as i32), rng.gen_range(0, width as i32))).collect();
@@ -71,25 +71,37 @@ fn main() {
 
     let cost = |a: P, b: P| cost_matrix[index(a, b)];
 
-    let pot = move |g0, g1, g2, g3| {
-        if g0 == g2 || g1 == g2 || g1 == g3 {
-            assert_eq!(g0 == g2, g1 == g3, "{:?} {:?} {:?} {:?}", g0, g1, g2, g3);
+    let mut nofg: Vec<P> = (0..size).collect();
+    let mut gofn: Vec<P> = (0..size).collect();
+
+    let pot = move |nofg: &Vec<P>, gofn: &Vec<P>, g1, g2| {
+        if g1 == g2 {
             return None;
         }
+        let n1 = nofg[g1 as usize];
+        let n2 = nofg[g2 as usize];
+        let (n1, g1, n2, g2) = if n1 < n2 { (n1, g1, n2, g2) } else { (n2, g2, n1, g1) };
+        if n1 == 0 || n2 >= size - 2 {
+            return None;
+        }
+        let n0 = n1 - 1;
+        let n3 = n2 + 1;
+        let g0 = gofn[n0 as usize];
+        let g3 = gofn[n3 as usize];
+
         let old = cost(g0, g1) + cost(g2, g3);
         let new = cost(g0, g2) + cost(g1, g3);
         if new < old {
-            Some(((g1, g2), (old - new) as u32))
+            Some((ord((g1, g2)), (old - new) as u32))
         } else {
             None
         }
     };
 
-    let mut nofg: Vec<P> = (0..size).collect();
-    let mut gofn: Vec<P> = (0..size).collect();
-
+    let nofgr = &nofg;
+    let gofnr = &gofn;
     let mut pofg1g2: PriorityQueue<PP, u32> = (1..size - 2)
-        .flat_map(|g1| (g1 + 1..size - 1).filter_map(move |g2| pot(g1 - 1, g1, g2, g2 + 1)))
+        .flat_map(|g1| (g1 + 1..size - 1).filter_map(move |g2| pot(nofgr, gofnr, g1, g2)))
         .collect();
 
     //println!("{:?}", pofg1g2);
@@ -97,8 +109,9 @@ fn main() {
     let mut i = 0;
     println!("{:?}", pofg1g2);
     draw(&gofn, i);
-    i+=1;
+    i += 1;
     while let Some(((g1, g2), p)) = pofg1g2.pop() {
+        println!("================== {:?}", i);
         let n1 = nofg[g1 as usize];
         let n2 = nofg[g2 as usize];
         let (n1, g1, n2, g2) = if n1 < n2 { (n1, g1, n2, g2) } else { (n2, g2, n1, g1) };
@@ -108,15 +121,16 @@ fn main() {
         let g0 = gofn[n0 as usize];
         let g3 = gofn[n3 as usize];
         println!("{:?} {:?} {:?} {:?} {:?}", g0, g1, g2, g3, p);
-        //assert_eq!(p, pot(g0, g1, g2, g3).unwrap().1);
+        //assert_eq!((ord((g1, g2)), p), pot(g0, g1, g2, g3).unwrap());
 
-        for n in 1..size - 1 {
-            let g = gofn[n as usize];
-            pofg1g2.change_priority(&ord((g, g1)), std::u32::MAX);
-            println!("{:?}", ord((g, g1)));
-            pofg1g2.pop().map(|f| println!("- {:?}", f)); // TODO remove unwrap
-            pofg1g2.change_priority(&ord((g, g2)), std::u32::MAX);
-            pofg1g2.pop().map(|f| println!("- {:?}", f)); // TODO remove unwrap
+        for g in 1..size - 1 {
+            for &gi in &[g0, g1, g2, g3] {
+                pot(&nofg, &gofn, gi, g).map(|((g1, g2), _p)| {
+                    pofg1g2.push((g1, g2), std::u32::MAX);
+                    assert_eq!((g1, g2), *pofg1g2.peek().unwrap().0);
+                    pofg1g2.pop();
+                });
+            }
         }
 
         (n1..n3).for_each(|n| {
@@ -126,20 +140,12 @@ fn main() {
         });
         gofn[n1 as usize..n3 as usize].reverse();
         println!("{:?}", gofn);
-        //println!("{:?}", pofg1g2);
 
-        for n in 1..size - 1 {
-            let g = gofn[n as usize];
-            let gp = gofn[n as usize - 1];
-            if n2 < n {
-                pot(g0, g2, gp, g).map(|(f, p)| {println!("+ {:?}", f);pofg1g2.push(ord(f), p)});
-            } else {
-                pot(gp, g, g0, g2).map(|(f, p)| {println!("+ {:?}", f);pofg1g2.push(ord(f), p)});
-            }
-            if n3 < n {
-                pot(g1, g3, gp, g).map(|(f, p)| {println!("+ {:?}", f);pofg1g2.push(ord(f), p)});
-            } else {
-                pot(gp, g, g1, g3).map(|(f, p)| {println!("+ {:?}", f);pofg1g2.push(ord(f), p)});
+        for g in 1..size - 1 {
+            for &gi in &[g0, g1, g2, g3] {
+                pot(&nofg, &gofn, gi, g).map(|((g1, g2), p)| {
+                    pofg1g2.push((g1, g2), p);
+                });
             }
         }
 
