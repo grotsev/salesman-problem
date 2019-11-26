@@ -12,6 +12,7 @@ use imageproc::rect::Rect;
 use imageproc::pixelops::interpolate;
 use priority_queue::PriorityQueue;
 use crate::Alg::{Rev, RotL, RotR};
+use std::path::Iter;
 
 type Coord = (i32, i32);
 type P = u16;
@@ -26,6 +27,43 @@ enum Alg {
     Rev,
     RotL,
     RotR,
+}
+
+struct Or<A, B> {
+    a: A,
+    b: B,
+    proc_a: Option<bool>,
+}
+
+impl<A, B> Or<A, B> {
+    fn new(a: A, b: B) -> Or<A, B> where A: Iterator, B: Iterator {
+        Or {
+            a,
+            b,
+            proc_a: None,
+        }
+    }
+}
+
+impl<A, B, I> Iterator for Or<A, B> where A: Iterator<Item=I>, B: Iterator<Item=I> {
+    type Item = I;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.proc_a {
+            Some(true) => self.a.next(),
+            Some(false) => self.b.next(),
+            None => match self.a.next() {
+                None => {
+                    self.proc_a = Some(false);
+                    self.b.next()
+                }
+                Some(x) => {
+                    self.proc_a = Some(true);
+                    Some(x)
+                }
+            },
+        }
+    }
 }
 
 fn main() {
@@ -80,15 +118,12 @@ fn main() {
     let cost = |a: P, b: P| cost_matrix[index(a, b)];
 
     let mut gofn: Vec<P> = (0..size).collect();
-    //gofn[1..size as usize - 1].shuffle(&mut rng);
-    //gofn[1..size as usize - 1].shuffle(&mut rng);
 
-    let rev = move |gofn: &Vec<P>, n1:P, n3:P| {
+    let rev = move |gofn: &Vec<P>, n1: P, n3: P| {
         let g0 = gofn[n1 as usize - 1];
         let g1 = gofn[n1 as usize];
         let g2 = gofn[n3 as usize - 1];
         let g3 = gofn[n3 as usize];
-
         let old = cost(g0, g1) + cost(g2, g3);
         let new = cost(g0, g2) + cost(g1, g3);
         if new < old {
@@ -98,13 +133,12 @@ fn main() {
         }
     };
 
-    let rotl = move |gofn: &Vec<P>, n1:P, n3:P| {
+    let rotl = move |gofn: &Vec<P>, n1: P, n3: P| {
         let g0 = gofn[n1 as usize - 1];
         let g = gofn[n1 as usize];
         let g1 = gofn[n1 as usize + 1];
         let g2 = gofn[n3 as usize - 1];
         let g3 = gofn[n3 as usize];
-
         let old = cost(g0, g) + cost(g, g1) + cost(g2, g3);
         let new = cost(g0, g1) + cost(g2, g) + cost(g, g3);
         if new < old {
@@ -114,13 +148,12 @@ fn main() {
         }
     };
 
-    let rotr = move |gofn: &Vec<P>, n1:P, n3:P| {
+    let rotr = move |gofn: &Vec<P>, n1: P, n3: P| {
         let g0 = gofn[n1 as usize - 1];
         let g1 = gofn[n1 as usize];
         let g2 = gofn[n3 as usize - 2];
         let g = gofn[n3 as usize - 1];
         let g3 = gofn[n3 as usize];
-
         let old = cost(g0, g1) + cost(g2, g) + cost(g, g3);
         let new = cost(g0, g) + cost(g, g1) + cost(g2, g3);
         if new < old {
@@ -130,12 +163,16 @@ fn main() {
         }
     };
 
+    //gofn[1..size as usize - 1].shuffle(&mut rng);
+    //gofn[1..size as usize - 1].shuffle(&mut rng);
     let mut i = 0;
     while let Some((alg, n1, n3, p)) = {
         let gofnr = &gofn;
-        (1..size - 2).flat_map(|n1| (n1 + 2..size).filter_map(move |n3| rev(gofnr, n1, n3)))
-            .chain((1..size - 2).flat_map(|n1| (n1 + 3..size).filter_map(move |n3| rotl(gofnr, n1, n3))))
-            .chain((1..size - 2).flat_map(|n1| (n1 + 3..size).filter_map(move |n3| rotr(gofnr, n1, n3))))
+        Or::new(
+            (1..size - 2).flat_map(|n1| (n1 + 2..size).filter_map(move |n3| rev(gofnr, n1, n3))),
+            (1..size - 2).flat_map(|n1| (n1 + 3..size).filter_map(move |n3| rotl(gofnr, n1, n3)))
+                .chain((1..size - 2).flat_map(|n1| (n1 + 3..size).filter_map(move |n3| rotr(gofnr, n1, n3)))),
+        )
             .max_by_key(|(_, _, _, p)| *p)
     } {
         let r = &mut gofn[n1 as usize..n3 as usize];
