@@ -11,61 +11,12 @@ use imageproc::drawing::{draw_antialiased_line_segment_mut, draw_filled_rect_mut
 use imageproc::rect::Rect;
 use imageproc::pixelops::interpolate;
 use priority_queue::PriorityQueue;
-use crate::Alg::{Rev, RotL, RotR};
 use std::path::Iter;
 use std::collections::HashSet;
 
 type Coord = (i32, i32);
 type P = u16;
 type PP = (u16, u16);
-
-fn ord<T: Ord>((a, b): (T, T)) -> (T, T) {
-    if a <= b { (a, b) } else { (b, a) }
-}
-
-#[derive(Debug)]
-enum Alg {
-    Rev,
-    RotL,
-    RotR,
-}
-
-struct Or<A, B> {
-    a: A,
-    b: B,
-    proc_a: Option<bool>,
-}
-
-impl<A, B> Or<A, B> {
-    fn new(a: A, b: B) -> Or<A, B> where A: Iterator, B: Iterator {
-        Or {
-            a,
-            b,
-            proc_a: None,
-        }
-    }
-}
-
-impl<A, B, I> Iterator for Or<A, B> where A: Iterator<Item=I>, B: Iterator<Item=I> {
-    type Item = I;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.proc_a {
-            Some(true) => self.a.next(),
-            Some(false) => self.b.next(),
-            None => match self.a.next() {
-                None => {
-                    self.proc_a = Some(false);
-                    self.b.next()
-                }
-                Some(x) => {
-                    self.proc_a = Some(true);
-                    Some(x)
-                }
-            },
-        }
-    }
-}
 
 fn main() {
     let font = Vec::from(include_bytes!("DejaVuSans.ttf") as &[u8]);
@@ -87,7 +38,7 @@ fn main() {
         let black = Rgb([0u8, 0u8, 0u8]);
         let gray = Rgb([200u8, 200u8, 200u8]);
         let red = Rgb([100u8, 0u8, 0u8]);
-        let yellow = Rgb([200u8, 200u8, 0u8]);
+        let yellow = Rgb([240u8, 240u8, 120u8]);
         let white = Rgb([255u8, 255u8, 255u8]);
         let height = 12.4;
         let scale = Scale {
@@ -119,85 +70,100 @@ fn main() {
 
     let cost = |a: P, b: P| cost_matrix[index(a, b)];
 
+    let len = |gofn: &Vec<u16>| -> u32 {
+        (1..gofn.len()).map(|i| cost(gofn[i], gofn[i - 1])).sum()
+    };
+
     let mut gofn: Vec<P> = (0..size).collect();
-
-    let rev = move |gofn: &Vec<P>, n1: P, n3: P| {
-        let g0 = gofn[n1 as usize - 1];
-        let g1 = gofn[n1 as usize];
-        let g2 = gofn[n3 as usize - 1];
-        let g3 = gofn[n3 as usize];
-        let old = cost(g0, g1) + cost(g2, g3);
-        let new = cost(g0, g2) + cost(g1, g3);
-        if new < old {
-            Some((Rev, n1, n3, old - new))
-        } else {
-            None
-        }
-    };
-
-    let rotl = move |gofn: &Vec<P>, n1: P, n3: P| {
-        let g0 = gofn[n1 as usize - 1];
-        let g = gofn[n1 as usize];
-        let g1 = gofn[n1 as usize + 1];
-        let g2 = gofn[n3 as usize - 1];
-        let g3 = gofn[n3 as usize];
-        let old = cost(g0, g) + cost(g, g1) + cost(g2, g3);
-        let new = cost(g0, g1) + cost(g2, g) + cost(g, g3);
-        if new < old {
-            Some((RotL, n1, n3, old - new))
-        } else {
-            None
-        }
-    };
-
-    let rotr = move |gofn: &Vec<P>, n1: P, n3: P| {
-        let g0 = gofn[n1 as usize - 1];
-        let g1 = gofn[n1 as usize];
-        let g2 = gofn[n3 as usize - 2];
-        let g = gofn[n3 as usize - 1];
-        let g3 = gofn[n3 as usize];
-        let old = cost(g0, g1) + cost(g2, g) + cost(g, g3);
-        let new = cost(g0, g) + cost(g, g1) + cost(g2, g3);
-        if new < old {
-            Some((RotR, n1, n3, old - new))
-        } else {
-            None
-        }
-    };
 
     //gofn[1..size as usize - 1].shuffle(&mut rng);
     //gofn[1..size as usize - 1].shuffle(&mut rng);
     let mut set = HashSet::new();
 
-    for tr in 0..10 {
-        let mut i = 0;
-        while let Some((alg, n1, n3, p)) = {
-            let gofnr = &gofn;
-            Or::new(
-                (1..size - 2).flat_map(|n1| (n1 + 2..size).filter_map(move |n3| rev(gofnr, n1, n3))),
-                (1..size - 2).flat_map(|n1| (n1 + 3..size).filter_map(move |n3| rotl(gofnr, n1, n3)))
-                    .chain((1..size - 2).flat_map(|n1| (n1 + 3..size).filter_map(move |n3| rotr(gofnr, n1, n3)))),
-            )
-                .max_by_key(|(_, _, _, p)| *p)
-        } {
-            let r = &mut gofn[n1 as usize..n3 as usize];
-            match alg {
-                Rev => r.reverse(),
-                RotL => r.rotate_left(1),
-                RotR => r.rotate_right(1),
-            }
-            //draw(&gofn, i);
-            i += 1;
+    let mut i = 0;
+    loop {
+        i += 1;
+        println!("{:?}", i);
+        let max = (1..size - 2).flat_map(|n_clip| {
+            let gofn = &gofn;
+            (n_clip + 2..size)
+                .filter_map(move |n_cut| {
+                    let cut0 = gofn[n_clip as usize - 1];
+                    let clip0 = gofn[n_clip as usize];
+                    let clip1 = gofn[n_cut as usize - 1];
+                    let cut1 = gofn[n_cut as usize];
+                    let old = cost(cut0, clip0) + cost(clip1, cut1);
+                    let new = cost(cut0, clip1) + cost(clip0, cut1);
+                    if new < old {
+                        Some((n_clip, n_cut, old - new))
+                    } else {
+                        None
+                    }
+                })
         }
+        )
+            .max_by_key(|(_, _, p)| *p)
+            .map(|(n_clip, n_cut, _)| gofn[n_clip as usize..n_cut as usize].reverse());
+        if max.is_some() {
+            continue;
+        };
 
-        let s: u32 = (1..gofn.len()).map(|i| cost(gofn[i], gofn[i - 1])).sum();
-        //println!("{:?} {:?} {:?}", start.elapsed(), i, s);
-        draw(&gofn, s);
-        if !set.insert(gofn.clone()) {
-            println!("!!!!!!clone {:?}", s);
-            //draw(&gofn, s);
-        }
-        gofn[1..size as usize - 1].shuffle(&mut rng);
+        println!("XXX {:?}", len(&gofn));
+
+        const WIDTH: P = 3;
+        let max = (1..size - 3).flat_map(|n_clip|
+            (n_clip + 1..(n_clip + WIDTH).min(size - 3)).flat_map(move |n_cut|
+                (n_cut + 2..size).map(move |n_paste| (n_clip, n_cut, n_paste))
+            )
+        ).chain(
+            (3..size - 1).flat_map(|n_clip|
+                (n_clip + 1..(n_clip + WIDTH).min(size - 3)).flat_map(move |n_cut|
+                    (1..n_clip - 1).map(move |n_paste| (n_clip, n_cut, n_paste))
+                )
+            )
+        ).filter_map(|(n_clip, n_cut, n_paste)| {
+            let cut0 = gofn[n_clip as usize - 1];
+            let clip0 = gofn[n_clip as usize];
+            let clip1 = gofn[n_cut as usize - 1];
+            let cut1 = gofn[n_cut as usize];
+            let paste0 = gofn[n_paste as usize - 1];
+            let paste1 = gofn[n_paste as usize];
+
+            let old = cost(cut0, clip0) + cost(clip1, cut1) + cost(paste0, paste1);
+            let direct = cost(paste0, clip0) + cost(clip1, paste1);
+            let reverse = cost(paste0, clip1) + cost(clip0, paste1);
+            let do_reverse = reverse < direct;
+            let new = cost(cut0, cut1) + if do_reverse { reverse } else { direct };
+
+            if new < old {
+                Some((do_reverse, n_clip, n_cut, n_paste, old - new))
+            } else {
+                None
+            }
+        })
+            .max_by_key(|(_, _, _, _, p)| *p)
+            .map(|(do_reverse, n_clip, n_cut, n_paste, p)| {
+                println!("{:?}", (do_reverse, n_clip, n_cut, n_paste, p));
+                if do_reverse {
+                    gofn[n_clip as usize..n_cut as usize].reverse();
+                }
+                if n_clip < n_paste {
+                    gofn[n_clip as usize..n_paste as usize].rotate_left((n_cut - n_clip) as usize)
+                } else {
+                    gofn[n_paste as usize..n_cut as usize].rotate_right((n_cut - n_clip) as usize)
+                }
+            });
+        if max.is_none() { break; }
     }
+
+    let s: u32 = len(&gofn);
+    println!("{:?} {:?} {:?}", start.elapsed(), i, s);
+    draw(&gofn, 999);
+    if !set.insert(gofn.clone()) {
+        println!("!!!!!!clone {:?}", s);
+        //draw(&gofn, s);
+    }
+    gofn[1..size as usize - 1].shuffle(&mut rng);
 }
+
 
