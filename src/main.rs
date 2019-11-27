@@ -13,6 +13,7 @@ use imageproc::pixelops::interpolate;
 use priority_queue::PriorityQueue;
 use crate::Alg::{Rev, RotL, RotR};
 use std::path::Iter;
+use std::collections::HashSet;
 
 type Coord = (i32, i32);
 type P = u16;
@@ -84,8 +85,9 @@ fn main() {
     let draw = |gofn: &Vec<P>, i: u32| {
         let mut image: RgbImage = RgbImage::new(width, width);
         let black = Rgb([0u8, 0u8, 0u8]);
-        //let gray = Rgb([200u8, 200u8, 200u8]);
+        let gray = Rgb([200u8, 200u8, 200u8]);
         let red = Rgb([100u8, 0u8, 0u8]);
+        let yellow = Rgb([200u8, 200u8, 0u8]);
         let white = Rgb([255u8, 255u8, 255u8]);
         let height = 12.4;
         let scale = Scale {
@@ -93,12 +95,12 @@ fn main() {
             y: height,
         };
         draw_filled_rect_mut(&mut image, Rect::at(0, 0).of_size(width, width), white);
-        for (i, p) in points.iter().enumerate() {
-            draw_filled_rect_mut(&mut image, Rect::at(p.0 - 1, p.1 - 1).of_size(3, 3), black);
-            //draw_text_mut(&mut image, black, p.0 as u32 + 2, p.1 as u32, scale, &font, &i.to_string());
-        }
         for i in 1..gofn.len() {
-            draw_antialiased_line_segment_mut(&mut image, points[gofn[i - 1] as usize], points[gofn[i] as usize], red, interpolate);
+            draw_antialiased_line_segment_mut(&mut image, points[gofn[i - 1] as usize], points[gofn[i] as usize], yellow, interpolate);
+        }
+        for (i, p) in points.iter().enumerate() {
+            draw_filled_rect_mut(&mut image, Rect::at(p.0, p.1).of_size(1, 1), red);
+            //draw_text_mut(&mut image, gray, p.0 as u32 + 2, p.1 as u32, scale, &font, &i.to_string());
         }
         image.save(format!("plot/{}.png", i)).unwrap();
     };
@@ -165,28 +167,37 @@ fn main() {
 
     //gofn[1..size as usize - 1].shuffle(&mut rng);
     //gofn[1..size as usize - 1].shuffle(&mut rng);
-    let mut i = 0;
-    while let Some((alg, n1, n3, p)) = {
-        let gofnr = &gofn;
-        Or::new(
-            (1..size - 2).flat_map(|n1| (n1 + 2..size).filter_map(move |n3| rev(gofnr, n1, n3))),
-            (1..size - 2).flat_map(|n1| (n1 + 3..size).filter_map(move |n3| rotl(gofnr, n1, n3)))
-                .chain((1..size - 2).flat_map(|n1| (n1 + 3..size).filter_map(move |n3| rotr(gofnr, n1, n3)))),
-        )
-            .max_by_key(|(_, _, _, p)| *p)
-    } {
-        let r = &mut gofn[n1 as usize..n3 as usize];
-        match alg {
-            Rev => r.reverse(),
-            RotL => r.rotate_left(1),
-            RotR => r.rotate_right(1),
-        }
-        //draw(&gofn, i);
-        i += 1;
-    }
+    let mut set = HashSet::new();
 
-    let s: u32 = (1..gofn.len()).map(|i| cost(gofn[i], gofn[i - 1])).sum();
-    println!("{:?} {:?} {:?}", start.elapsed(), i, s);
-    draw(&gofn, i);
+    for tr in 0..10 {
+        let mut i = 0;
+        while let Some((alg, n1, n3, p)) = {
+            let gofnr = &gofn;
+            Or::new(
+                (1..size - 2).flat_map(|n1| (n1 + 2..size).filter_map(move |n3| rev(gofnr, n1, n3))),
+                (1..size - 2).flat_map(|n1| (n1 + 3..size).filter_map(move |n3| rotl(gofnr, n1, n3)))
+                    .chain((1..size - 2).flat_map(|n1| (n1 + 3..size).filter_map(move |n3| rotr(gofnr, n1, n3)))),
+            )
+                .max_by_key(|(_, _, _, p)| *p)
+        } {
+            let r = &mut gofn[n1 as usize..n3 as usize];
+            match alg {
+                Rev => r.reverse(),
+                RotL => r.rotate_left(1),
+                RotR => r.rotate_right(1),
+            }
+            //draw(&gofn, i);
+            i += 1;
+        }
+
+        let s: u32 = (1..gofn.len()).map(|i| cost(gofn[i], gofn[i - 1])).sum();
+        //println!("{:?} {:?} {:?}", start.elapsed(), i, s);
+        draw(&gofn, s);
+        if !set.insert(gofn.clone()) {
+            println!("!!!!!!clone {:?}", s);
+            //draw(&gofn, s);
+        }
+        gofn[1..size as usize - 1].shuffle(&mut rng);
+    }
 }
 
