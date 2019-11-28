@@ -10,108 +10,124 @@ use image::{Rgb, RgbImage};
 use imageproc::drawing::{draw_antialiased_line_segment_mut, draw_filled_rect_mut, draw_text_mut};
 use imageproc::rect::Rect;
 use imageproc::pixelops::interpolate;
-use priority_queue::PriorityQueue;
-use std::path::Iter;
-use std::collections::HashSet;
 
-type Coord = (i32, i32);
-type P = u16;
-type PP = (u16, u16);
+struct Problem {
+    size: u16,
+    cost_matrix: Vec<u32>,
+}
 
-fn main() {
-    let font = Vec::from(include_bytes!("DejaVuSans.ttf") as &[u8]);
-    let font = FontCollection::from_bytes(font)
-        .unwrap()
-        .into_font()
-        .unwrap();
-
-    let start = Instant::now();
-    let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(10);
-
-    let size: P = 100;
-    let index = |a: P, b: P| a as usize * size as usize + b as usize;
-    let width: u32 = 256;
-    let points: Vec<Coord> = (0..size).map(|_| (rng.gen_range(0, width as i32), rng.gen_range(0, width as i32))).collect();
-
-    let draw = |gofn: &Vec<P>, i: u32| {
-        let mut image: RgbImage = RgbImage::new(width, width);
-        let black = Rgb([0u8, 0u8, 0u8]);
-        let gray = Rgb([200u8, 200u8, 200u8]);
-        let red = Rgb([100u8, 0u8, 0u8]);
-        let yellow = Rgb([240u8, 240u8, 120u8]);
-        let white = Rgb([255u8, 255u8, 255u8]);
-        let height = 12.4;
-        let scale = Scale {
-            x: height,
-            y: height,
-        };
-        draw_filled_rect_mut(&mut image, Rect::at(0, 0).of_size(width, width), white);
-        for i in 1..gofn.len() {
-            draw_antialiased_line_segment_mut(&mut image, points[gofn[i - 1] as usize], points[gofn[i] as usize], yellow, interpolate);
-        }
-        for (i, p) in points.iter().enumerate() {
-            draw_filled_rect_mut(&mut image, Rect::at(p.0, p.1).of_size(1, 1), red);
-            //draw_text_mut(&mut image, gray, p.0 as u32 + 2, p.1 as u32, scale, &font, &i.to_string());
-        }
-        image.save(format!("plot/{}.png", i)).unwrap();
-    };
-
-    let cost_matrix: Vec<u32> = {
-        let mut r = Vec::with_capacity(size as usize * size as usize);
+impl Problem {
+    fn new(points: &Vec<(i32, i32)>) -> Problem {
+        let size = points.len();
+        let mut cost_matrix = Vec::with_capacity(size * size);
         for a in 0..size {
             for b in 0..size {
-                r.push((((points[a as usize].0 - points[b as usize].0) as f64)
-                    .hypot((points[a as usize].1 - points[b as usize].1) as f64) * 100f64)
+                cost_matrix.push((100f64 * ((points[a].0 - points[b].0) as f64)
+                    .hypot((points[a].1 - points[b].1) as f64))
                     .ceil() as u32)
             }
         }
-        r
-    };
+        Problem { size: size as u16, cost_matrix }
+    }
 
-    let cost = |a: P, b: P| cost_matrix[index(a, b)];
+    fn cost(&self, a: u16, b: u16) -> u32 {
+        self.cost_matrix[a as usize * self.size as usize + b as usize]
+    }
+}
 
-    let len = |gofn: &Vec<u16>| -> u32 {
-        (1..gofn.len()).map(|i| cost(gofn[i], gofn[i - 1])).sum()
-    };
+struct Solution<'a> {
+    problem: &'a Problem,
+    perm: Vec<u16>,
+}
 
-    let mut gofn: Vec<P> = (0..size).collect();
+impl<'a> Solution<'a> {
+    fn new(problem: &Problem) -> Solution {
+        Solution { problem, perm: (0..problem.size).collect() }
+    }
 
-    //gofn[1..size as usize - 1].shuffle(&mut rng);
-    //gofn[1..size as usize - 1].shuffle(&mut rng);
-    let mut set = HashSet::new();
+    fn cost(&self) -> u32 {
+        (1..self.perm.len()).map(|i| self.problem.cost(self.perm[i], self.perm[i - 1])).sum()
+    }
 
-    let mut i = 0;
-    loop {
-        i += 1;
-        println!("{:?}", i);
-        let max = (1..size - 2).flat_map(|n_clip| {
-            let gofn = &gofn;
-            (n_clip + 2..size)
-                .filter_map(move |n_cut| {
-                    let cut0 = gofn[n_clip as usize - 1];
-                    let clip0 = gofn[n_clip as usize];
-                    let clip1 = gofn[n_cut as usize - 1];
-                    let cut1 = gofn[n_cut as usize];
-                    let old = cost(cut0, clip0) + cost(clip1, cut1);
-                    let new = cost(cut0, clip1) + cost(clip0, cut1);
-                    if new < old {
-                        Some((n_clip, n_cut, old - new))
-                    } else {
-                        None
-                    }
-                })
+    fn local(&mut self) -> u32 {
+        while Reverse::optimize(self)
+            || Rotate::optimize(self) {}
+        self.cost()
+    }
+
+    fn global<R>(&mut self, times: usize, rng: &mut R) -> u32
+        where R: Rng + ?Sized {
+        let mut best_cost = self.local();
+        let mut best_perm = self.perm.clone();
+
+        for _ in 1..times {
+            self.perm[1..self.problem.size as usize - 1].shuffle(rng);
+            let cost = self.local();
+            if best_cost > cost {
+                best_cost = cost;
+                best_perm.copy_from_slice(&self.perm);
+            }
         }
-        )
-            .max_by_key(|(_, _, p)| *p)
-            .map(|(n_clip, n_cut, _)| gofn[n_clip as usize..n_cut as usize].reverse());
-        if max.is_some() {
-            continue;
-        };
+        best_cost
+    }
+}
 
-        println!("XXX {:?}", len(&gofn));
+trait Optimization {
+    type Neighbor;
 
-        const WIDTH: P = 3;
-        let max = (1..size - 3).flat_map(|n_clip|
+    fn optimize(solution: &mut Solution) -> bool {
+        let mut optimized = false;
+        while let Some(best_neighbor) = Self::best_neighbor(solution) {
+            Self::apply_neighbor(solution, best_neighbor);
+            optimized = true;
+        }
+        return optimized;
+    }
+
+    fn best_neighbor(solution: &Solution) -> Option<Self::Neighbor>;
+
+    fn apply_neighbor(solution: &mut Solution, neighbor: Self::Neighbor);
+}
+
+struct Reverse;
+
+impl Optimization for Reverse {
+    type Neighbor = (u16, u16);
+
+    fn best_neighbor(solution: &Solution) -> Option<Self::Neighbor> {
+        let size = solution.problem.size;
+        (1..size - 2).flat_map(|n_clip| (n_clip + 2..size)
+            .filter_map(move |n_cut| {
+                let cut0 = solution.perm[n_clip as usize - 1];
+                let clip0 = solution.perm[n_clip as usize];
+                let clip1 = solution.perm[n_cut as usize - 1];
+                let cut1 = solution.perm[n_cut as usize];
+                let old = solution.problem.cost(cut0, clip0) + solution.problem.cost(clip1, cut1);
+                let new = solution.problem.cost(cut0, clip1) + solution.problem.cost(clip0, cut1);
+                if new < old {
+                    Some((old - new, n_clip, n_cut))
+                } else {
+                    None
+                }
+            }))
+            .max_by_key(|(p, _, _)| *p)
+            .map(|(_, n_clip, n_cut)| (n_clip, n_cut))
+    }
+
+    fn apply_neighbor(solution: &mut Solution, (n_clip, n_cut): Self::Neighbor) {
+        solution.perm[n_clip as usize..n_cut as usize].reverse()
+    }
+}
+
+struct Rotate;
+
+impl Optimization for Rotate {
+    type Neighbor = (bool, u16, u16, u16);
+
+    fn best_neighbor(solution: &Solution) -> Option<Self::Neighbor> {
+        const WIDTH: u16 = 3;
+        let size = solution.problem.size;
+        (1..size - 3).flat_map(|n_clip|
             (n_clip + 1..(n_clip + WIDTH).min(size - 3)).flat_map(move |n_cut|
                 (n_cut + 2..size).map(move |n_paste| (n_clip, n_cut, n_paste))
             )
@@ -122,48 +138,75 @@ fn main() {
                 )
             )
         ).filter_map(|(n_clip, n_cut, n_paste)| {
-            let cut0 = gofn[n_clip as usize - 1];
-            let clip0 = gofn[n_clip as usize];
-            let clip1 = gofn[n_cut as usize - 1];
-            let cut1 = gofn[n_cut as usize];
-            let paste0 = gofn[n_paste as usize - 1];
-            let paste1 = gofn[n_paste as usize];
+            let cut0 = solution.perm[n_clip as usize - 1];
+            let clip0 = solution.perm[n_clip as usize];
+            let clip1 = solution.perm[n_cut as usize - 1];
+            let cut1 = solution.perm[n_cut as usize];
+            let paste0 = solution.perm[n_paste as usize - 1];
+            let paste1 = solution.perm[n_paste as usize];
 
-            let old = cost(cut0, clip0) + cost(clip1, cut1) + cost(paste0, paste1);
-            let direct = cost(paste0, clip0) + cost(clip1, paste1);
-            let reverse = cost(paste0, clip1) + cost(clip0, paste1);
+            let old = solution.problem.cost(cut0, clip0) + solution.problem.cost(clip1, cut1) + solution.problem.cost(paste0, paste1);
+            let direct = solution.problem.cost(paste0, clip0) + solution.problem.cost(clip1, paste1);
+            let reverse = solution.problem.cost(paste0, clip1) + solution.problem.cost(clip0, paste1);
             let do_reverse = reverse < direct;
-            let new = cost(cut0, cut1) + if do_reverse { reverse } else { direct };
+            let new = solution.problem.cost(cut0, cut1) + if do_reverse { reverse } else { direct };
 
             if new < old {
-                Some((do_reverse, n_clip, n_cut, n_paste, old - new))
+                Some((old - new, do_reverse, n_clip, n_cut, n_paste))
             } else {
                 None
             }
         })
-            .max_by_key(|(_, _, _, _, p)| *p)
-            .map(|(do_reverse, n_clip, n_cut, n_paste, p)| {
-                println!("{:?}", (do_reverse, n_clip, n_cut, n_paste, p));
-                if do_reverse {
-                    gofn[n_clip as usize..n_cut as usize].reverse();
-                }
-                if n_clip < n_paste {
-                    gofn[n_clip as usize..n_paste as usize].rotate_left((n_cut - n_clip) as usize)
-                } else {
-                    gofn[n_paste as usize..n_cut as usize].rotate_right((n_cut - n_clip) as usize)
-                }
-            });
-        if max.is_none() { break; }
+            .max_by_key(|(p, _, _, _, _)| *p)
+            .map(|(_, do_reverse, n_clip, n_cut, n_paste)| (do_reverse, n_clip, n_cut, n_paste))
     }
 
-    let s: u32 = len(&gofn);
-    println!("{:?} {:?} {:?}", start.elapsed(), i, s);
-    draw(&gofn, 999);
-    if !set.insert(gofn.clone()) {
-        println!("!!!!!!clone {:?}", s);
-        //draw(&gofn, s);
+    fn apply_neighbor(solution: &mut Solution, (do_reverse, n_clip, n_cut, n_paste): Self::Neighbor) {
+        if do_reverse {
+            solution.perm[n_clip as usize..n_cut as usize].reverse();
+        }
+        if n_clip < n_paste {
+            solution.perm[n_clip as usize..n_paste as usize].rotate_left((n_cut - n_clip) as usize)
+        } else {
+            solution.perm[n_paste as usize..n_cut as usize].rotate_right((n_cut - n_clip) as usize)
+        }
     }
-    gofn[1..size as usize - 1].shuffle(&mut rng);
+}
+
+const IMAGE_WIDTH: u32 = 256;
+const TEXT_HEIGHT: f32 = 10.0;
+
+fn main() {
+    let font = FontCollection::from_bytes(include_bytes!("DejaVuSans.ttf") as &[u8]).unwrap().into_font().unwrap();
+    let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(10);
+    let points: Vec<(i32, i32)> = (0..100).map(|_| (rng.gen_range(0, IMAGE_WIDTH as i32), rng.gen_range(0, IMAGE_WIDTH as i32))).collect();
+
+    let draw = |gofn: &Vec<u16>, i: u32| {
+        let mut image: RgbImage = RgbImage::new(IMAGE_WIDTH, IMAGE_WIDTH);
+        let city = Rgb([0u8, 0u8, 0u8]);
+        let title = Rgb([0u8, 100u8, 200u8]);
+        let road = Rgb([200u8, 100u8, 0u8]);
+        let ground = Rgb([255u8, 255u8, 255u8]);
+        draw_filled_rect_mut(&mut image, Rect::at(0, 0).of_size(IMAGE_WIDTH, IMAGE_WIDTH), ground);
+        let scale = Scale { x: TEXT_HEIGHT, y: TEXT_HEIGHT };
+        for (i, p) in points.iter().enumerate() {
+            draw_text_mut(&mut image, title, p.0 as u32 + 2, p.1 as u32, scale, &font, &i.to_string());
+        }
+        for i in 1..gofn.len() {
+            draw_antialiased_line_segment_mut(&mut image, points[gofn[i - 1] as usize], points[gofn[i] as usize], road, interpolate);
+        }
+        for p in points.iter() {
+            draw_filled_rect_mut(&mut image, Rect::at(p.0, p.1).of_size(2, 2), city);
+        }
+        image.save(format!("plot/{}.png", i)).unwrap();
+    };
+
+    let problem = Problem::new(&points);
+    let mut solution = Solution::new(&problem);
+    let start = Instant::now();
+    let cost = solution.global(5, &mut rng);
+    println!("{:?} {:?}", start.elapsed(), cost);
+    draw(&solution.perm, 999);
 }
 
 
